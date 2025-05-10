@@ -3,6 +3,12 @@ const router = express.Router();
 const User = require('../models/user');
 const Exercise = require('../models/exercise');
 
+// Log requests for debugging
+router.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`, req.body, req.query);
+  next();
+});
+
 // Create new user
 router.post('/users', async (req, res) => {
   try {
@@ -13,6 +19,7 @@ router.post('/users', async (req, res) => {
     const user = await User.create({ username });
     res.json({ username: user.username, _id: user._id });
   } catch (error) {
+    console.error('Error in POST /users:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -23,6 +30,7 @@ router.get('/users', async (req, res) => {
     const users = await User.find().select('username _id').lean();
     res.json(users);
   } catch (error) {
+    console.error('Error in GET /users:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -67,6 +75,7 @@ router.post('/users/:_id/exercises', async (req, res) => {
       _id: user._id
     });
   } catch (error) {
+    console.error('Error in POST /users/:_id/exercises:', error);
     res.status(400).json({ error: error.message });
   }
 });
@@ -126,6 +135,7 @@ router.get('/users/:_id/logs', async (req, res) => {
       log
     });
   } catch (error) {
+    console.error('Error in GET /users/:_id/logs:', error);
     res.status(400).json({ error: error.message });
   }
 });

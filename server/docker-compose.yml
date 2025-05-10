@@ -12,6 +12,21 @@ services:
       MONGO_INITDB_DATABASE: exercise_tracker
     restart: unless-stopped
 
+  backend:
+    build:
+      dockerfile: Dockerfile
+    container_name: exercise_tracker_backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./client/build:/app/client/build
+    environment:
+      - MONGODB_URI=mongodb://mongodb:27017/exercise_tracker
+      - PORT=5000
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+
 volumes:
   mongodb_data:
     name: exercise_tracker_mongodb_data

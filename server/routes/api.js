@@ -41,17 +41,23 @@ router.post('/users/:_id/exercises', async (req, res) => {
     const { _id } = req.params;
     let { description, duration, date } = req.body;
 
+    // Log request body for debugging
+    console.log('POST /users/:_id/exercises body:', { description, duration, date });
+
     // Convert empty strings to undefined
-    description = description || undefined;
-    duration = duration || undefined;
-    date = date || undefined;
+    description = description && description !== '' ? description : undefined;
+    duration = duration && duration !== '' ? duration : undefined;
+    date = date && date !== '' ? date : undefined;
 
     // Validate inputs
     if (!description || typeof description !== 'string') {
+      console.log('Validation failed: Invalid description');
       return res.status(400).json({ error: 'Description is required and must be a string' });
     }
-    if (!duration || isNaN(duration)) {
-      return res.status(400).json({ error: 'Duration is required and must be a number' });
+    const durationNum = Number(duration);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      console.log('Validation failed: Invalid duration');
+      return res.status(400).json({ error: 'Duration is required and must be a positive number' });
     }
 
     const user = await User.findById(_id);
@@ -62,11 +68,12 @@ router.post('/users/:_id/exercises', async (req, res) => {
     const exerciseData = {
       userId: _id,
       description: String(description),
-      duration: Number(duration),
+      duration: durationNum,
       date: date ? new Date(date) : new Date()
     };
 
     if (date && isNaN(exerciseData.date.getTime())) {
+      console.log('Validation failed: Invalid date');
       return res.status(400).json({ error: 'Invalid date format' });
     }
 
@@ -91,10 +98,13 @@ router.get('/users/:_id/logs', async (req, res) => {
     const { _id } = req.params;
     let { from, to, limit } = req.query;
 
+    // Log query params for debugging
+    console.log('Query params:', { from, to, limit });
+
     // Convert empty query params to undefined
-    from = from || undefined;
-    to = to || undefined;
-    limit = limit || undefined;
+    from = from && from !== '' ? from : undefined;
+    to = to && to !== '' ? to : undefined;
+    limit = limit && limit !== '' ? limit : undefined;
 
     const user = await User.findById(_id);
     if (!user) {
@@ -106,37 +116,43 @@ router.get('/users/:_id/logs', async (req, res) => {
     // Handle date range only if valid dates are provided
     if (from || to) {
       query.date = {};
-      if (from && from !== '') {
+      if (from) {
         const fromDate = new Date(from);
         if (isNaN(fromDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid from date' });
+          console.log(`Invalid from date: ${from}`);
+          query.date.$gte = new Date('1970-01-01'); // Fallback
+        } else {
+          query.date.$gte = fromDate;
         }
-        query.date.$gte = fromDate;
       }
-      if (to && to !== '') {
+      if (to) {
         const toDate = new Date(to);
         if (isNaN(toDate.getTime())) {
-          return res.status(400).json({ error: 'Invalid to date' });
+          console.log(`Invalid to date: ${to}`);
+          query.date.$lte = new Date(); // Fallback
+        } else {
+          query.date.$lte = toDate;
         }
-        query.date.$lte = toDate;
       }
     }
 
     let exercisesQuery = Exercise.find(query).select('description duration date');
-    if (limit && limit !== '') {
+    if (limit) {
       const limitNum = Number(limit);
       if (isNaN(limitNum) || limitNum < 0) {
-        return res.status(400).json({ error: 'Limit must be a non-negative number' });
+        console.log(`Invalid limit: ${limit}`);
+        // Skip limit
+      } else {
+        exercisesQuery = exercisesQuery.limit(limitNum);
       }
-      exercisesQuery = exercisesQuery.limit(limitNum);
     }
 
     const exercises = await exercisesQuery.lean();
 
     const log = exercises.map(ex => ({
-      description: String(ex.description),
-      duration: Number(ex.duration),
-      date: new Date(ex.date).toDateString()
+      description: String(ex.description || ''),
+      duration: Number(ex.duration || 0),
+      date: new Date(ex.date || new Date()).toDateString()
     }));
 
     res.json({

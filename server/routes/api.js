@@ -13,8 +13,8 @@ router.use((req, res, next) => {
 router.post('/users', async (req, res) => {
   try {
     const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({ error: 'Username is required' });
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'Username is required and must be a string' });
     }
     const user = await User.create({ username });
     res.json({ username: user.username, _id: user._id });
@@ -39,10 +39,19 @@ router.get('/users', async (req, res) => {
 router.post('/users/:_id/exercises', async (req, res) => {
   try {
     const { _id } = req.params;
-    const { description, duration, date } = req.body;
+    let { description, duration, date } = req.body;
 
-    if (!description || !duration) {
-      return res.status(400).json({ error: 'Description and duration are required' });
+    // Convert empty strings to undefined to allow default date
+    description = description || undefined;
+    duration = duration || undefined;
+    date = date || undefined;
+
+    // Validate inputs
+    if (!description || typeof description !== 'string') {
+      return res.status(400).json({ error: 'Description is required and must be a string' });
+    }
+    if (!duration || isNaN(duration)) {
+      return res.status(400).json({ error: 'Duration is required and must be a number' });
     }
 
     const user = await User.findById(_id);
@@ -52,14 +61,10 @@ router.post('/users/:_id/exercises', async (req, res) => {
 
     const exerciseData = {
       userId: _id,
-      description,
+      description: String(description),
       duration: Number(duration),
       date: date ? new Date(date) : new Date()
     };
-
-    if (isNaN(exerciseData.duration)) {
-      return res.status(400).json({ error: 'Duration must be a number' });
-    }
 
     if (date && isNaN(exerciseData.date.getTime())) {
       return res.status(400).json({ error: 'Invalid date format' });
@@ -125,7 +130,7 @@ router.get('/users/:_id/logs', async (req, res) => {
     const log = exercises.map(ex => ({
       description: String(ex.description),
       duration: Number(ex.duration),
-      date: ex.date.toDateString()
+      date: new Date(ex.date).toDateString()
     }));
 
     res.json({

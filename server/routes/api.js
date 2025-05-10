@@ -41,7 +41,7 @@ router.post('/users/:_id/exercises', async (req, res) => {
     const { _id } = req.params;
     let { description, duration, date } = req.body;
 
-    // Convert empty strings to undefined to allow default date
+    // Convert empty strings to undefined
     description = description || undefined;
     duration = duration || undefined;
     date = date || undefined;
@@ -89,7 +89,12 @@ router.post('/users/:_id/exercises', async (req, res) => {
 router.get('/users/:_id/logs', async (req, res) => {
   try {
     const { _id } = req.params;
-    const { from, to, limit } = req.query;
+    let { from, to, limit } = req.query;
+
+    // Convert empty query params to undefined
+    from = from || undefined;
+    to = to || undefined;
+    limit = limit || undefined;
 
     const user = await User.findById(_id);
     if (!user) {
@@ -98,16 +103,17 @@ router.get('/users/:_id/logs', async (req, res) => {
 
     let query = { userId: _id };
 
+    // Handle date range only if valid dates are provided
     if (from || to) {
       query.date = {};
-      if (from) {
+      if (from && from !== '') {
         const fromDate = new Date(from);
         if (isNaN(fromDate.getTime())) {
           return res.status(400).json({ error: 'Invalid from date' });
         }
         query.date.$gte = fromDate;
       }
-      if (to) {
+      if (to && to !== '') {
         const toDate = new Date(to);
         if (isNaN(toDate.getTime())) {
           return res.status(400).json({ error: 'Invalid to date' });
@@ -117,7 +123,7 @@ router.get('/users/:_id/logs', async (req, res) => {
     }
 
     let exercisesQuery = Exercise.find(query).select('description duration date');
-    if (limit) {
+    if (limit && limit !== '') {
       const limitNum = Number(limit);
       if (isNaN(limitNum) || limitNum < 0) {
         return res.status(400).json({ error: 'Limit must be a non-negative number' });

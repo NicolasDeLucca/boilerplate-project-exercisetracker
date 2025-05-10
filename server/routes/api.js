@@ -72,9 +72,10 @@ router.post('/users/:_id/exercises', async (req, res) => {
       date: date ? new Date(date) : new Date()
     };
 
+    // Allow invalid dates to default to current date
     if (date && isNaN(exerciseData.date.getTime())) {
-      console.log('Validation failed: Invalid date');
-      return res.status(400).json({ error: 'Invalid date format' });
+      console.log('Invalid date provided, using current date:', date);
+      exerciseData.date = new Date();
     }
 
     const exercise = await Exercise.create(exerciseData);
@@ -119,8 +120,8 @@ router.get('/users/:_id/logs', async (req, res) => {
       if (from) {
         const fromDate = new Date(from);
         if (isNaN(fromDate.getTime())) {
-          console.log(`Invalid from date: ${from}`);
-          query.date.$gte = new Date('1970-01-01'); // Fallback
+          console.log(`Invalid from date, using fallback: ${from}`);
+          query.date.$gte = new Date('1970-01-01');
         } else {
           query.date.$gte = fromDate;
         }
@@ -128,8 +129,8 @@ router.get('/users/:_id/logs', async (req, res) => {
       if (to) {
         const toDate = new Date(to);
         if (isNaN(toDate.getTime())) {
-          console.log(`Invalid to date: ${to}`);
-          query.date.$lte = new Date(); // Fallback
+          console.log(`Invalid to date, using fallback: ${to}`);
+          query.date.$lte = new Date();
         } else {
           query.date.$lte = toDate;
         }
@@ -140,8 +141,7 @@ router.get('/users/:_id/logs', async (req, res) => {
     if (limit) {
       const limitNum = Number(limit);
       if (isNaN(limitNum) || limitNum < 0) {
-        console.log(`Invalid limit: ${limit}`);
-        // Skip limit
+        console.log(`Invalid limit, skipping: ${limit}`);
       } else {
         exercisesQuery = exercisesQuery.limit(limitNum);
       }
@@ -149,11 +149,17 @@ router.get('/users/:_id/logs', async (req, res) => {
 
     const exercises = await exercisesQuery.lean();
 
-    const log = exercises.map(ex => ({
-      description: String(ex.description || ''),
-      duration: Number(ex.duration || 0),
-      date: new Date(ex.date || new Date()).toDateString()
-    }));
+    const log = exercises.map(ex => {
+      const duration = Number(ex.duration);
+      if (isNaN(duration)) {
+        console.log(`Invalid duration in exercise: ${ex.duration}`);
+      }
+      return {
+        description: String(ex.description || ''),
+        duration: isNaN(duration) ? 0 : duration,
+        date: new Date(ex.date || new Date()).toDateString()
+      };
+    });
 
     res.json({
       username: user.username,

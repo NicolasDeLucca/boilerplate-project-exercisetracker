@@ -20,7 +20,7 @@ router.post('/users', async (req, res) => {
 // Get all users
 router.get('/users', async (req, res) => {
   try {
-    const users = await User.find({}, 'username _id');
+    const users = await User.find().select('username _id').lean();
     res.json(users);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -32,7 +32,7 @@ router.post('/users/:_id/exercises', async (req, res) => {
   try {
     const { _id } = req.params;
     const { description, duration, date } = req.body;
-    
+
     if (!description || !duration) {
       return res.status(400).json({ error: 'Description and duration are required' });
     }
@@ -49,8 +49,16 @@ router.post('/users/:_id/exercises', async (req, res) => {
       date: date ? new Date(date) : new Date()
     };
 
+    if (isNaN(exerciseData.duration)) {
+      return res.status(400).json({ error: 'Duration must be a number' });
+    }
+
+    if (date && isNaN(exerciseData.date.getTime())) {
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
     const exercise = await Exercise.create(exerciseData);
-    
+
     res.json({
       username: user.username,
       description: exercise.description,
@@ -68,31 +76,46 @@ router.get('/users/:_id/logs', async (req, res) => {
   try {
     const { _id } = req.params;
     const { from, to, limit } = req.query;
-    
+
     const user = await User.findById(_id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     let query = { userId: _id };
-    
+
     if (from || to) {
       query.date = {};
-      if (from) query.date.$gte = new Date(from);
-      if (to) query.date.$lte = new Date(to);
+      if (from) {
+        const fromDate = new Date(from);
+        if (isNaN(fromDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid from date' });
+        }
+        query.date.$gte = fromDate;
+      }
+      if (to) {
+        const toDate = new Date(to);
+        if (isNaN(toDate.getTime())) {
+          return res.status(400).json({ error: 'Invalid to date' });
+        }
+        query.date.$lte = toDate;
+      }
     }
 
     let exercisesQuery = Exercise.find(query).select('description duration date');
-    
     if (limit) {
-      exercisesQuery = exercisesQuery.limit(Number(limit));
+      const limitNum = Number(limit);
+      if (isNaN(limitNum) || limitNum < 0) {
+        return res.status(400).json({ error: 'Limit must be a non-negative number' });
+      }
+      exercisesQuery = exercisesQuery.limit(limitNum);
     }
 
-    const exercises = await exercisesQuery.exec();
-    
+    const exercises = await exercisesQuery.lean();
+
     const log = exercises.map(ex => ({
-      description: ex.description,
-      duration: ex.duration,
+      description: String(ex.description),
+      duration: Number(ex.duration),
       date: ex.date.toDateString()
     }));
 

@@ -12,10 +12,18 @@ router.use((req, res, next) => {
 // Create new user
 router.post('/users', async (req, res) => {
   try {
-    const { username } = req.body;
-    if (!username || typeof username !== 'string') {
-      return res.status(400).json({ error: 'Username is required and must be a string' });
+    let { username } = req.body;
+
+    // Log request body for debugging
+    console.log('POST /users body:', { username });
+
+    // Handle empty or invalid username
+    username = username && typeof username === 'string' && username.trim() !== '' ? username.trim() : undefined;
+    if (!username) {
+      console.log('Validation failed: Invalid username');
+      return res.status(400).json({ error: 'Username is required and must be a non-empty string' });
     }
+
     const user = await User.create({ username });
     res.json({ username: user.username, _id: user._id });
   } catch (error) {
@@ -45,14 +53,14 @@ router.post('/users/:_id/exercises', async (req, res) => {
     console.log('POST /users/:_id/exercises body:', { description, duration, date });
 
     // Convert empty strings to undefined
-    description = description && description !== '' ? description : undefined;
+    description = description && typeof description === 'string' && description.trim() !== '' ? description.trim() : undefined;
     duration = duration && duration !== '' ? duration : undefined;
     date = date && date !== '' ? date : undefined;
 
     // Validate inputs
-    if (!description || typeof description !== 'string') {
+    if (!description) {
       console.log('Validation failed: Invalid description');
-      return res.status(400).json({ error: 'Description is required and must be a string' });
+      return res.status(400).json({ error: 'Description is required and must be a non-empty string' });
     }
     const durationNum = Number(duration);
     if (isNaN(durationNum) || durationNum <= 0) {
@@ -72,7 +80,7 @@ router.post('/users/:_id/exercises', async (req, res) => {
       date: date ? new Date(date) : new Date()
     };
 
-    // Allow invalid dates to default to current date
+    // Default to current date if invalid
     if (date && isNaN(exerciseData.date.getTime())) {
       console.log('Invalid date provided, using current date:', date);
       exerciseData.date = new Date();
@@ -151,13 +159,17 @@ router.get('/users/:_id/logs', async (req, res) => {
 
     const log = exercises.map(ex => {
       const duration = Number(ex.duration);
-      if (isNaN(duration)) {
-        console.log(`Invalid duration in exercise: ${ex.duration}`);
+      if (isNaN(duration) || duration <= 0) {
+        console.log(`Invalid duration in exercise, using 0: ${ex.duration}`);
+      }
+      const date = new Date(ex.date || new Date());
+      if (isNaN(date.getTime())) {
+        console.log(`Invalid date in exercise, using current date: ${ex.date}`);
       }
       return {
         description: String(ex.description || ''),
-        duration: isNaN(duration) ? 0 : duration,
-        date: new Date(ex.date || new Date()).toDateString()
+        duration: isNaN(duration) || duration <= 0 ? 0 : duration,
+        date: isNaN(date.getTime()) ? new Date().toDateString() : date.toDateString()
       };
     });
 

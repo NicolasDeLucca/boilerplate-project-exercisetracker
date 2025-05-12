@@ -12,10 +12,18 @@ router.use((req, res, next) => {
 // Create new user
 router.post('/users', async (req, res) => {
   try {
-    const { username } = req.body;
-    if (!username || typeof username !== 'string') {
-      return res.status(400).json({ error: 'Username is required and must be a string' });
+    let { username } = req.body;
+
+    // Log request body for debugging
+    console.log('POST /users body:', { username });
+
+    // Handle empty or invalid username
+    username = username && typeof username === 'string' && username.trim() !== '' ? username.trim() : undefined;
+    if (!username) {
+      console.log('Validation failed: Invalid username');
+      return res.status(400).json({ error: 'Username is required and must be a non-empty string' });
     }
+
     const user = await User.create({ username });
     res.json({ username: user.username, _id: user._id });
   } catch (error) {
@@ -45,14 +53,14 @@ router.post('/users/:_id/exercises', async (req, res) => {
     console.log('POST /users/:_id/exercises body:', { description, duration, date });
 
     // Convert empty strings to undefined
-    description = description && description !== '' ? description : undefined;
+    description = description && typeof description === 'string' && description.trim() !== '' ? description.trim() : undefined;
     duration = duration && duration !== '' ? duration : undefined;
     date = date && date !== '' ? date : undefined;
 
     // Validate inputs
-    if (!description || typeof description !== 'string') {
+    if (!description) {
       console.log('Validation failed: Invalid description');
-      return res.status(400).json({ error: 'Description is required and must be a string' });
+      return res.status(400).json({ error: 'Description is required and must be a non-empty string' });
     }
     const durationNum = Number(duration);
     if (isNaN(durationNum) || durationNum <= 0) {
@@ -72,9 +80,10 @@ router.post('/users/:_id/exercises', async (req, res) => {
       date: date ? new Date(date) : new Date()
     };
 
+    // Default to current date if invalid
     if (date && isNaN(exerciseData.date.getTime())) {
-      console.log('Validation failed: Invalid date');
-      return res.status(400).json({ error: 'Invalid date format' });
+      console.log('Invalid date provided, using current date:', date);
+      exerciseData.date = new Date();
     }
 
     const exercise = await Exercise.create(exerciseData);
@@ -101,7 +110,12 @@ router.get('/users/:_id/logs', async (req, res) => {
     // Log query params for debugging
     console.log('Query params:', { from, to, limit });
 
-    // Convert empty query params to undefined
+    // Convert query params to strings and handle empty values
+    from = from != null ? String(from).trim() : undefined;
+    to = to != null ? String(to).trim() : undefined;
+    limit = limit != null ? String(limit).trim() : undefined;
+
+    // Ignore empty strings
     from = from && from !== '' ? from : undefined;
     to = to && to !== '' ? to : undefined;
     limit = limit && limit !== '' ? limit : undefined;
@@ -113,25 +127,21 @@ router.get('/users/:_id/logs', async (req, res) => {
 
     let query = { userId: _id };
 
-    // Handle date range only if valid dates are provided
+    // Handle date range only if provided
     if (from || to) {
       query.date = {};
       if (from) {
         const fromDate = new Date(from);
+        query.date.$gte = isNaN(fromDate.getTime()) ? new Date('1970-01-01') : fromDate;
         if (isNaN(fromDate.getTime())) {
-          console.log(`Invalid from date: ${from}`);
-          query.date.$gte = new Date('1970-01-01'); // Fallback
-        } else {
-          query.date.$gte = fromDate;
+          console.log(`Invalid from date, using fallback: ${from}`);
         }
       }
       if (to) {
         const toDate = new Date(to);
+        query.date.$lte = isNaN(toDate.getTime()) ? new Date() : toDate;
         if (isNaN(toDate.getTime())) {
-          console.log(`Invalid to date: ${to}`);
-          query.date.$lte = new Date(); // Fallback
-        } else {
-          query.date.$lte = toDate;
+          console.log(`Invalid to date, using fallback: ${to}`);
         }
       }
     }
@@ -140,8 +150,7 @@ router.get('/users/:_id/logs', async (req, res) => {
     if (limit) {
       const limitNum = Number(limit);
       if (isNaN(limitNum) || limitNum < 0) {
-        console.log(`Invalid limit: ${limit}`);
-        // Skip limit
+        console.log(`Invalid limit, skipping: ${limit}`);
       } else {
         exercisesQuery = exercisesQuery.limit(limitNum);
       }
@@ -149,11 +158,15 @@ router.get('/users/:_id/logs', async (req, res) => {
 
     const exercises = await exercisesQuery.lean();
 
-    const log = exercises.map(ex => ({
-      description: String(ex.description || ''),
-      duration: Number(ex.duration || 0),
-      date: new Date(ex.date || new Date()).toDateString()
-    }));
+    const log = exercises.map(ex => {
+      const duration = Number(ex.duration);
+      const date = new Date(ex.date || new Date());
+      return {
+        description: String(ex.description || ''),
+        duration: isNaN(duration) || duration <= 0 ? 0 : duration,
+        date: isNaN(date.getTime()) ? new Date().toDateString() : date.toDateString()
+      };
+    });
 
     res.json({
       username: user.username,

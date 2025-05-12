@@ -1,93 +1,169 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User');
-const Exercise = require('../models/Exercise');
+const User = require('../models/user');
+const Exercise = require('../models/exercise');
 
-// Crear nuevo usuario
-router.post('/api/users', async (req, res) => {
+// Log requests for debugging
+router.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`, req.body, req.query);
+  next();
+});
+
+// Create new user
+router.post('/users', async (req, res) => {
   try {
     const { username } = req.body;
-    const user = new User({ username });
-    await user.save();
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'Username is required and must be a string' });
+    }
+    const user = await User.create({ username });
     res.json({ username: user.username, _id: user._id });
-  } catch (err) {
-    res.status(500).json({ error: 'Error creating user' });
+  } catch (error) {
+    console.error('Error in POST /users:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Obtener todos los usuarios
-router.get('/api/users', async (req, res) => {
+// Get all users
+router.get('/users', async (req, res) => {
   try {
-    const users = await User.find({}, 'username _id');
+    const users = await User.find().select('username _id').lean();
     res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching users' });
+  } catch (error) {
+    console.error('Error in GET /users:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Agregar ejercicio
-router.post('/api/users/:_id/exercises', async (req, res) => {
+// Add exercise
+router.post('/users/:_id/exercises', async (req, res) => {
   try {
-    const { description, duration, date } = req.body;
-    const user = await User.findById(req.params._id);
-    if (!user) return res.status(404).send('User not found');
+    const { _id } = req.params;
+    let { description, duration, date } = req.body;
 
-    const rawDate = date ? new Date(date) : new Date();
-    const validDate = isNaN(rawDate.getTime()) ? new Date() : rawDate;
+    // Log request body for debugging
+    console.log('POST /users/:_id/exercises body:', { description, duration, date });
 
-    const exercise = new Exercise({
-      userId: user._id,
-      description,
-      duration: parseInt(duration),
-      date: validDate
-    });
+    // Convert empty strings to undefined
+    description = description && description !== '' ? description : undefined;
+    duration = duration && duration !== '' ? duration : undefined;
+    date = date && date !== '' ? date : undefined;
 
-    await exercise.save();
+    // Validate inputs
+    if (!description || typeof description !== 'string') {
+      console.log('Validation failed: Invalid description');
+      return res.status(400).json({ error: 'Description is required and must be a string' });
+    }
+    const durationNum = Number(duration);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      console.log('Validation failed: Invalid duration');
+      return res.status(400).json({ error: 'Duration is required and must be a positive number' });
+    }
+
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const exerciseData = {
+      userId: _id,
+      description: String(description),
+      duration: durationNum,
+      date: date ? new Date(date) : new Date()
+    };
+
+    if (date && isNaN(exerciseData.date.getTime())) {
+      console.log('Validation failed: Invalid date');
+      return res.status(400).json({ error: 'Invalid date format' });
+    }
+
+    const exercise = await Exercise.create(exerciseData);
 
     res.json({
-      _id: user._id,
       username: user.username,
       description: exercise.description,
       duration: exercise.duration,
-      date: exercise.date.toDateString()
+      date: exercise.date.toDateString(),
+      _id: user._id
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Error adding exercise' });
+  } catch (error) {
+    console.error('Error in POST /users/:_id/exercises:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 
-// Obtener log de ejercicios
-router.get('/api/users/:_id/logs', async (req, res) => {
+// Get exercise log
+router.get('/users/:_id/logs', async (req, res) => {
   try {
-    const { from, to, limit } = req.query;
-    const user = await User.findById(req.params._id);
-    if (!user) return res.status(404).send('User not found');
+    const { _id } = req.params;
+    let { from, to, limit } = req.query;
 
-    const filter = { userId: req.params._id };
+    // Log query params for debugging
+    console.log('Query params:', { from, to, limit });
 
-    if (from || to) {
-      filter.date = {};
-      if (from) filter.date.$gte = new Date(from);
-      if (to) filter.date.$lte = new Date(to);
+    // Convert empty query params to undefined
+    from = from && from !== '' ? from : undefined;
+    to = to && to !== '' ? to : undefined;
+    limit = limit && limit !== '' ? limit : undefined;
+
+    const user = await User.findById(_id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    let query = Exercise.find(filter).select('description duration date');
-    if (limit) query = query.limit(parseInt(limit));
+    let query = { userId: _id };
 
-    const exercises = await query.exec();
+    // Handle date range only if valid dates are provided
+    if (from || to) {
+      query.date = {};
+      if (from) {
+        const fromDate = new Date(from);
+        if (isNaN(fromDate.getTime())) {
+          console.log(`Invalid from date: ${from}`);
+          query.date.$gte = new Date('1970-01-01'); // Fallback
+        } else {
+          query.date.$gte = fromDate;
+        }
+      }
+      if (to) {
+        const toDate = new Date(to);
+        if (isNaN(toDate.getTime())) {
+          console.log(`Invalid to date: ${to}`);
+          query.date.$lte = new Date(); // Fallback
+        } else {
+          query.date.$lte = toDate;
+        }
+      }
+    }
+
+    let exercisesQuery = Exercise.find(query).select('description duration date');
+    if (limit) {
+      const limitNum = Number(limit);
+      if (isNaN(limitNum) || limitNum < 0) {
+        console.log(`Invalid limit: ${limit}`);
+        // Skip limit
+      } else {
+        exercisesQuery = exercisesQuery.limit(limitNum);
+      }
+    }
+
+    const exercises = await exercisesQuery.lean();
+
+    const log = exercises.map(ex => ({
+      description: String(ex.description || ''),
+      duration: Number(ex.duration || 0),
+      date: new Date(ex.date || new Date()).toDateString()
+    }));
 
     res.json({
       username: user.username,
       count: exercises.length,
       _id: user._id,
-      log: exercises.map(e => ({
-        description: e.description,
-        duration: e.duration,
-        date: e.date.toDateString()
-      }))
+      log
     });
-  } catch (err) {
-    res.status(500).json({ error: 'Error fetching logs' });
+  } catch (error) {
+    console.error('Error in GET /users/:_id/logs:', error);
+    res.status(400).json({ error: error.message });
   }
 });
 

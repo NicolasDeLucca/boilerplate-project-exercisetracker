@@ -3,6 +3,8 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const path = require('path');
 require('dotenv').config();
+const User = require('./models/user');
+const Exercise = require('./models/exercise');
 
 const app = express();
 

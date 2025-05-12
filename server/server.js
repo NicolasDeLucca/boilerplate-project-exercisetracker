@@ -22,12 +22,24 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
 });
 
-// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => {
+  useUnifiedTopology: true,
+}).then(async () => {
   console.log('Connected to MongoDB');
+
+  try {
+    await Exercise.deleteMany({});
+    console.log('Exercise collection emptied');
+
+    await User.deleteMany({});
+    console.log('User collection emptied');
+  } catch (err) {
+    console.error('Error emptying collections:', err);
+  } finally {
+    mongoose.connection.close();
+  }
+
 }).catch(err => {
   console.error('MongoDB connection error:', err);
 });
